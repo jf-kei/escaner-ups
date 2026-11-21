@@ -25,7 +25,7 @@ header small{opacity:.75;font-size:13px}
 .guide::after{content:"";position:absolute;left:4%;right:4%;top:50%;height:2px;background:#ff3b30;box-shadow:0 0 8px #ff3b30}
 .flash{position:absolute;inset:0;pointer-events:none;opacity:0;transition:opacity .35s}
 .flash.on{opacity:.45;transition:none}
-.idle{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;text-align:center;padding:20px;background:#10263b}
+.idle[hidden]{display:none!important}.ctrls[hidden]{display:none!important}.idle{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;text-align:center;padding:20px;background:#10263b}
 .ctrls{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
 button{font:inherit;border:0;border-radius:12px;min-height:44px;padding:0 16px;font-weight:600;cursor:pointer}
 button:focus-visible,input:focus-visible{outline:3px solid #4da3ff;outline-offset:2px}
@@ -91,7 +91,7 @@ select{font:inherit;font-size:16px;min-height:44px;border:1.5px solid var(--line
 </style>
 </head>
 <body>
-<header><h1>Escáner de series UPS</h1><small id="invinfo"></small></header>
+<header><h1>Escáner de series UPS <span style="font-size:11px;opacity:.6;font-weight:400">v3</span></h1><small id="invinfo"></small></header>
 
 <div class="view" id="view">
   <video id="vid" playsinline muted autoplay></video>
@@ -298,9 +298,12 @@ async function start(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('camErr').textContent='Este navegador no permite la cámara aquí. Abra la app desde su dirección https en Safari.';return}
   try{
     const cons={video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false};
+    $('camErr').textContent='Abriendo cámara…';
     stream=await navigator.mediaDevices.getUserMedia(cons);
-    const v=$('vid');v.setAttribute('playsinline','');v.muted=true;v.srcObject=stream;
-    try{await v.play()}catch(e){}
+    const v=$('vid');v.setAttribute('playsinline','');v.setAttribute('autoplay','');v.muted=true;v.srcObject=stream;
+    $('idle').hidden=true;$('ctrls').hidden=false;$('camErr').textContent='';
+    try{await Promise.race([v.play(),new Promise(r=>setTimeout(r,1500))])}catch(e){}
+    v.addEventListener('loadedmetadata',()=>{try{v.play()}catch(e){}},{once:true});
     if('BarcodeDetector' in window){
       try{detector=new BarcodeDetector({formats:['code_128','code_39','code_93','ean_13','ean_8','upc_a','itf','qr_code','data_matrix']})}catch(e){detector=null}
     }
