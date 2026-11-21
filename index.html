@@ -290,7 +290,7 @@ $('chips').addEventListener('click',e=>{const b=e.target.closest('button');if(b)
 fillList();chips();
 
 // ---- cámara
-let reader=null,stream=null,paused=false,running=false,detector=null,raf=0;
+let stream=null,paused=false,running=false,detector=null,raf=0;
 const hasZX=typeof ZXing!=='undefined';
 async function start(){
   $('camErr').textContent='';
@@ -298,22 +298,30 @@ async function start(){
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('camErr').textContent='Este navegador no permite la cámara aquí. Abra la app desde su dirección https en Safari.';return}
   try{
     const cons={video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false};
+    stream=await navigator.mediaDevices.getUserMedia(cons);
+    const v=$('vid');v.setAttribute('playsinline','');v.muted=true;v.srcObject=stream;
+    try{await v.play()}catch(e){}
     if('BarcodeDetector' in window){
-      detector=new BarcodeDetector({formats:['code_128','code_39','code_93','ean_13','ean_8','upc_a','itf','qr_code','data_matrix']});
-      stream=await navigator.mediaDevices.getUserMedia(cons);$('vid').srcObject=stream;await $('vid').play();loopBD();
-    }else if(hasZX){
+      try{detector=new BarcodeDetector({formats:['code_128','code_39','code_93','ean_13','ean_8','upc_a','itf','qr_code','data_matrix']})}catch(e){detector=null}
+    }
+    if(detector)loopBD();
+    else if(hasZX){
       const H=new Map(),F=ZXing.BarcodeFormat;
       H.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.CODE_128,F.CODE_39,F.CODE_93,F.EAN_13,F.EAN_8,F.UPC_A,F.ITF,F.QR_CODE,F.DATA_MATRIX]);
       H.set(ZXing.DecodeHintType.TRY_HARDER,true);
-      reader=new ZXing.BrowserMultiFormatReader(H,150);
-      await reader.decodeFromConstraints(cons,$('vid'),(res)=>{if(res&&!paused)handle(res.getText(),false)});
-      stream=$('vid').srcObject;
-    }else{$('camErr').textContent='No se pudo cargar el lector de códigos.';return}
+      mfr=new ZXing.MultiFormatReader();mfr.setHints(H);loopZX();
+    }else{$('camErr').textContent='No se pudo cargar el lector de códigos.';stop();return}
     running=true;$('idle').hidden=true;$('ctrls').hidden=false;setupTorch();
   }catch(e){$('camErr').textContent=(e&&e.name==='NotAllowedError')?'Permiso de cámara denegado. Actívelo en Ajustes › Safari › Cámara.':'No se pudo abrir la cámara ('+(e&&e.name||e)+').'}
 }
+let mfr=null;const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
+function loopZX(){if(!stream)return;const v=$('vid');
+  if(!paused&&!asking&&v.videoWidth){const W=v.videoWidth,Hh=v.videoHeight,y0=Math.round(Hh*.28),h=Math.round(Hh*.44),sc=Math.min(1,1000/W);
+    cv.width=Math.round(W*sc);cv.height=Math.round(h*sc);cx.drawImage(v,0,y0,W,h,0,0,cv.width,cv.height);
+    try{const r=mfr.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cv))));if(r)handle(r.getText(),false)}catch(e){}finally{try{mfr.reset()}catch(e){}}}
+  raf=setTimeout(loopZX,110)}
 async function loopBD(){if(!stream)return;if(!paused&&$('vid').readyState>=2){try{const c=await detector.detect($('vid'));if(c.length)handle(c[0].rawValue,false)}catch(e){}}raf=setTimeout(loopBD,150)}
-function stop(){try{reader&&reader.reset()}catch(e){}clearTimeout(raf);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;running=false;$('idle').hidden=false;$('ctrls').hidden=true}
+function stop(){clearTimeout(raf);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;running=false;$('idle').hidden=false;$('ctrls').hidden=true}
 function setupTorch(){const t=stream&&stream.getVideoTracks()[0];let cap={};try{cap=t.getCapabilities?t.getCapabilities():{}}catch(e){}
   if(cap.torch){let on=false;$('btnTorch').hidden=false;$('btnTorch').onclick=async()=>{on=!on;try{await t.applyConstraints({advanced:[{torch:on}]})}catch(e){toast('Linterna no disponible')}}}}
 $('btnStart').addEventListener('click',start);
