@@ -83,6 +83,11 @@ select{font:inherit;font-size:16px;min-height:44px;border:1.5px solid var(--line
 .steps{display:flex;gap:6px;margin-bottom:8px}.steps i{flex:1;height:4px;border-radius:4px;background:var(--line)}.steps i.on{background:var(--pri)}
 .t-rep{background:var(--warn)}.t-des{background:var(--bad)}.t-new{background:#3f6f9f}
 .warnline{font-size:14px;color:var(--warn);font-weight:600;margin:-4px 0 12px;min-height:0}
+.capbar{display:flex;gap:8px;padding:10px 14px;background:var(--pri);max-width:none}
+.capbar .b-cap{flex:1;min-height:60px;font-size:20px;background:#fff;color:var(--pri);letter-spacing:.02em}
+.capbar .b-cap:disabled{opacity:.6}
+.capbar label.b-foto{display:flex;align-items:center;justify-content:center;min-height:60px;padding:0 16px;border-radius:12px;background:#3f6f9f;color:#fff;font-weight:600;cursor:pointer}
+.capbar .b-cap[hidden]{display:none}
 .toast{position:fixed;left:50%;top:calc(env(safe-area-inset-top) + 56px);transform:translateX(-50%);background:#10263b;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;opacity:0;transition:opacity .25s;pointer-events:none;max-width:90vw;text-align:center;z-index:9}
 .toast.on{opacity:1}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;padding:20px;z-index:8}
@@ -91,7 +96,7 @@ select{font:inherit;font-size:16px;min-height:44px;border:1.5px solid var(--line
 </style>
 </head>
 <body>
-<header><h1>Escáner de series UPS <span style="font-size:11px;opacity:.6;font-weight:400">v3</span></h1><small id="invinfo"></small></header>
+<header><h1>Escáner de series UPS <span style="font-size:11px;opacity:.6;font-weight:400">v4</span></h1><small id="invinfo"></small></header>
 
 <div class="view" id="view">
   <video id="vid" playsinline muted autoplay></video>
@@ -102,10 +107,14 @@ select{font:inherit;font-size:16px;min-height:44px;border:1.5px solid var(--line
     <button class="b-ghost" id="btnPause">Pausar</button>
   </div>
   <div class="idle" id="idle">
-    <div style="font-size:15px;max-width:300px">Apunte la línea roja al código de barras de la <b>serie</b>. Cada lectura se agrega sola a la lista.</div>
+    <div style="font-size:15px;max-width:300px">Encuadre la etiqueta completa de la UPS y toque <b>Escanear</b>: la app lee la serie y el modelo en una sola toma.</div>
     <button class="b-big" id="btnStart">Iniciar cámara</button>
     <div class="note" id="camErr" style="color:#ffb4b4"></div>
   </div>
+</div>
+<div class="capbar" id="capbar">
+  <button class="b-cap" id="btnScan" hidden>Escanear</button>
+  <label class="b-foto" id="lblFoto">Foto<input type="file" accept="image/*" capture="environment" id="foto" hidden></label>
 </div>
 
 <main>
@@ -150,6 +159,7 @@ select{font:inherit;font-size:16px;min-height:44px;border:1.5px solid var(--line
     <summary>Opciones</summary>
     <p><label><input type="checkbox" id="optS" checked> Quitar la “S” inicial de series APC y cambiar “SOB” por “0B”</label></p>
     <p><label><input type="checkbox" id="optSound" checked> Sonido al leer</label></p>
+    <p><label><input type="checkbox" id="optAuto"> Lectura automática continua (sin botón)</label></p>
   </details>
 
   <details>
@@ -196,7 +206,7 @@ function fillList(){$('mlist').innerHTML=allModels().map(m=>`<option value="${es
 let items=store.get('ups_items',[]).map(i=>({b:brandOf(i.m),...i}));
 $('sess').value=store.get('ups_sess','');
 $('sess').addEventListener('input',()=>store.set('ups_sess',$('sess').value));
-['optS','optSound'].forEach(o=>{const v=store.get('ups_'+o,null);if(v!==null)$(o).checked=v;$(o).addEventListener('change',()=>store.set('ups_'+o,$(o).checked))});
+['optS','optSound','optAuto'].forEach(o=>{const v=store.get('ups_'+o,null);if(v!==null)$(o).checked=v;$(o).addEventListener('change',()=>store.set('ups_'+o,$(o).checked))});
 $('mFix').checked=store.get('ups_fix',false);$('mInput').value=store.get('ups_curm','');$('mBrand').value=store.get('ups_curb','');
 
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -255,6 +265,7 @@ function finishClass(){const it=items[cI];if(it){it.est=cTmp.est;it.fu=cTmp.fu;l
   showLast(it.est==='Para descarte'?'bad':it.est==='Por reparar'?'warn':'ok',`<div class="s">${esc(it.s)}</div><div class="d"><b>${esc(it.b)}</b> · ${esc(it.m)}<br><span class="tag ${TAGC[it.est]}">${esc(it.est)}</span><span class="tag t-src">${esc(it.fu)}</span>${it.reg?'en inventario':'no registrada'}</div>`);beep(1318,90)}
   $('sheet').classList.remove('on');if(it){lastClosed=it.s;closeT=Date.now()}asking=false;cI=-1;}
 $('cStep').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const v=b.dataset.v;
+  if(v.startsWith('pick:')){$('sheet').classList.remove('on');asking=false;const s=v.slice(5);if(s)commit(s,pickModel);return}
   if(v==='__same'){cTmp={...lastClass};return finishClass()}
   if(v==='__del'){const s=items[cI]&&items[cI].s;items.splice(cI,1);render();$('sheet').classList.remove('on');asking=false;cI=-1;lastClosed=s;closeT=Date.now();toast('Quitada: '+s);showLast('','<div class="d">Serie quitada</div>');return}
   if(v==='lista')return stepUI(2,'¿Es nueva o reacondicionada?',[['Nueva','Nueva','o-alt'],['Reacondicionada lista','Reacondicionada','o-ok']]);
@@ -273,11 +284,13 @@ function handle(raw,manual){
   if(items.some(i=>i.s===s)){flash('#ff9500');beep(330,180);showLast('warn',`<div class="s">${esc(s)}</div><div class="d"><span class="tag t-warn">Ya escaneada</span>no se agregó otra vez</div>`);return}
   const r=invMap.get(s);
   let m=r?String(r[1]||'').toUpperCase():'',b=r?brandOf(m):'';
+  const fromCap=!r&&!!capModel;
+  if(!m&&capModel){m=capModel;b=brandOf(m)||$('mBrand').value||'OTRA';remember(m)}
   if(!m&&$('mFix').checked&&curModel()){m=curModel();b=$('mBrand').value||brandOf(m)||'OTRA'}
   const it={s,reg:!!r,m,b,e:r?r[2]:'',f:r?(r[3]||''):'',t:now,h:new Date().toLocaleTimeString('es-GT',{hour:'2-digit',minute:'2-digit'})};
   items.unshift(it);render();
   if(r){flash('#34c759');beep(1046,120);showLast('ok',`<div class="s">${esc(s)}</div><div class="d"><span class="tag t-ok">Registrada</span><b>${esc(b)}</b> · ${esc(m)} · ${esc(it.e)}${it.f?` <span class="tag t-src">${esc(it.f)}</span>`:''}${r[4]?' · Ubic. '+esc(r[4]):''}</div>`)}
-  else if(m){flash('#ff3b30');beep(440,220);showLast('bad',`<div class="s">${esc(s)}</div><div class="d"><span class="tag t-bad">No registrada</span><b>${esc(b)}</b> · ${esc(m)} (modelo del lote)</div>`)}
+  else if(m){flash('#ff3b30');beep(440,220);showLast('bad',`<div class="s">${esc(s)}</div><div class="d"><span class="tag t-bad">No registrada</span><b>${esc(b)}</b> · ${esc(m)} (${fromCap?'modelo de la etiqueta':'modelo del lote'})</div>`)}
   else{flash('#ff3b30');beep(440,260);showLast('bad',`<div class="s">${esc(s)}</div><div class="d"><span class="tag t-bad">No registrada</span><span class="tag t-need">Falta modelo</span>escanee el código del modelo</div>`)}
   if(it.m)setTimeout(()=>openClass(items.indexOf(it)),350);
 }
@@ -297,7 +310,7 @@ async function start(){
   try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();actx.resume&&actx.resume()}catch(e){}
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){$('camErr').textContent='Este navegador no permite la cámara aquí. Abra la app desde su dirección https en Safari.';return}
   try{
-    const cons={video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}},audio:false};
+    const cons={video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}},audio:false};
     $('camErr').textContent='Abriendo cámara…';
     stream=await navigator.mediaDevices.getUserMedia(cons);
     const v=$('vid');v.setAttribute('playsinline','');v.setAttribute('autoplay','');v.muted=true;v.srcObject=stream;
@@ -309,25 +322,69 @@ async function start(){
     }
     if(detector)loopBD();
     else if(hasZX){
-      const H=new Map(),F=ZXing.BarcodeFormat;
-      H.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.CODE_128,F.CODE_39,F.CODE_93,F.EAN_13,F.EAN_8,F.UPC_A,F.ITF,F.QR_CODE,F.DATA_MATRIX]);
-      H.set(ZXing.DecodeHintType.TRY_HARDER,true);
-      mfr=new ZXing.MultiFormatReader();mfr.setHints(H);loopZX();
+      ensureMfr();loopZX();
     }else{$('camErr').textContent='No se pudo cargar el lector de códigos.';stop();return}
-    running=true;$('idle').hidden=true;$('ctrls').hidden=false;setupTorch();
+    running=true;$('idle').hidden=true;$('ctrls').hidden=false;$('btnScan').hidden=false;setupTorch();
   }catch(e){$('camErr').textContent=(e&&e.name==='NotAllowedError')?'Permiso de cámara denegado. Actívelo en Ajustes › Safari › Cámara.':'No se pudo abrir la cámara ('+(e&&e.name||e)+').'}
 }
-let mfr=null;const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
+let mfr=null;
+function ensureMfr(){if(mfr||!hasZX)return mfr;const H=new Map(),F=ZXing.BarcodeFormat;
+  H.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[F.CODE_128,F.CODE_39,F.CODE_93,F.EAN_13,F.EAN_8,F.UPC_A,F.ITF,F.QR_CODE,F.DATA_MATRIX]);
+  H.set(ZXing.DecodeHintType.TRY_HARDER,true);mfr=new ZXing.MultiFormatReader();mfr.setHints(H);return mfr}
+const cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
 function loopZX(){if(!stream)return;const v=$('vid');
-  if(!paused&&!asking&&v.videoWidth){const W=v.videoWidth,Hh=v.videoHeight,y0=Math.round(Hh*.28),h=Math.round(Hh*.44),sc=Math.min(1,1000/W);
+  if(!paused&&!asking&&!busy&&$('optAuto').checked&&v.videoWidth){const W=v.videoWidth,Hh=v.videoHeight,y0=Math.round(Hh*.28),h=Math.round(Hh*.44),sc=Math.min(1,1000/W);
     cv.width=Math.round(W*sc);cv.height=Math.round(h*sc);cx.drawImage(v,0,y0,W,h,0,0,cv.width,cv.height);
     try{const r=mfr.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cv))));if(r)handle(r.getText(),false)}catch(e){}finally{try{mfr.reset()}catch(e){}}}
   raf=setTimeout(loopZX,110)}
-async function loopBD(){if(!stream)return;if(!paused&&$('vid').readyState>=2){try{const c=await detector.detect($('vid'));if(c.length)handle(c[0].rawValue,false)}catch(e){}}raf=setTimeout(loopBD,150)}
-function stop(){clearTimeout(raf);if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;running=false;$('idle').hidden=false;$('ctrls').hidden=true}
+async function loopBD(){if(!stream)return;if(!paused&&!asking&&!busy&&$('optAuto').checked&&$('vid').readyState>=2){try{const c=await detector.detect($('vid'));if(c.length)handle(c[0].rawValue,false)}catch(e){}}raf=setTimeout(loopBD,150)}
+function stop(){clearTimeout(raf);$('btnScan').hidden=true;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;running=false;$('idle').hidden=false;$('ctrls').hidden=true}
 function setupTorch(){const t=stream&&stream.getVideoTracks()[0];let cap={};try{cap=t.getCapabilities?t.getCapabilities():{}}catch(e){}
   if(cap.torch){let on=false;$('btnTorch').hidden=false;$('btnTorch').onclick=async()=>{on=!on;try{await t.applyConstraints({advanced:[{torch:on}]})}catch(e){toast('Linterna no disponible')}}}}
 $('btnStart').addEventListener('click',start);
+
+// ---- captura con botón / foto
+let capModel='',busy=false;
+const tick=()=>new Promise(r=>setTimeout(r,0));
+async function decodeCanvas(c){const found=new Map();
+  if(detector){try{(await detector.detect(c)).forEach(x=>found.set(x.rawValue,String(x.format||'').toUpperCase()))}catch(e){}if(found.size)return found}
+  if(!ensureMfr())return found;
+  const tryDec=cc=>{try{const r=mfr.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(cc))));if(r)found.set(r.getText(),String(ZXing.BarcodeFormat[r.getBarcodeFormat()]||''))}catch(e){}finally{try{mfr.reset()}catch(e){}}};
+  tryDec(c);await tick();
+  const sc=document.createElement('canvas'),sx=sc.getContext('2d',{willReadFrequently:true}),W=c.width,H=c.height;
+  for(const f of [.2,.32]){const sh=Math.round(H*f),step=Math.round(sh/2);
+    for(let y=0;y<H-step/2;y+=step){const hh=Math.min(sh,H-y);if(hh<20)break;sc.width=W;sc.height=hh;sx.drawImage(c,0,y,W,hh,0,0,W,hh);tryDec(sc);await tick()}}
+  return found}
+function rot(c){const r=document.createElement('canvas');r.width=c.height;r.height=c.width;const x=r.getContext('2d');x.translate(r.width,0);x.rotate(Math.PI/2);x.drawImage(c,0,0);return r}
+function toCanvas(src,w,h,max){const s=Math.min(1,max/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*s);c.height=Math.round(h*s);c.getContext('2d',{willReadFrequently:true}).drawImage(src,0,0,c.width,c.height);return c}
+async function analyze(c){
+  let found=await decodeCanvas(c);
+  if(!found.size){found=await decodeCanvas(rot(c))}
+  const ents=[...found].map(([t,f])=>({t,f,n:norm(t),mc:modelCode(t)}));
+  const models=ents.filter(e=>e.mc),others=ents.filter(e=>!e.mc);
+  let ser=others.filter(e=>!/EAN|UPC/.test(e.f));if(!ser.length)ser=others;
+  const inInv=ser.filter(e=>invMap.has(e.n));if(inInv.length)ser=inInv;else{const sl=ser.filter(e=>serialLike(e.n));if(sl.length)ser=sl}
+  ser=ser.filter((e,i,a)=>a.findIndex(x=>x.n===e.n)===i);
+  const mod=models.length?models[0].mc:'';
+  if(!ser.length){
+    if(mod){applyModel(mod,brandOf(mod),true);showLast('warn',`<div class="s">${esc(mod)}</div><div class="d"><span class="tag t-warn">Solo se leyó el modelo</span>enfoque también la serie y vuelva a escanear</div>`)}
+    else{flash('#ff3b30');beep(300,200);showLast('bad','<div class="s">No se encontró código</div><div class="d">Acérquese a 15–20 cm, con buena luz y la etiqueta derecha. Si no lee, use Foto.</div>')}
+    return}
+  if(ser.length===1)return commit(ser[0].n,mod);
+  pickModel=mod;asking=true;$('cSer').textContent='Se leyeron varios códigos';$('cHint').textContent=mod?('Modelo: '+mod):'';
+  [1,2,3].forEach(k=>$('st'+k).classList.remove('on'));
+  $('cStep').innerHTML='<div class="q">¿Cuál es el número de serie?</div><div class="opts">'+ser.map(e=>`<button class="o-pri" data-v="pick:${esc(e.n)}">${esc(e.n)}</button>`).join('')+'<button class="o-same" data-v="pick:">Ninguno, volver a escanear</button></div>';
+  $('sheet').classList.add('on')}
+let pickModel='';
+function commit(s,mod){capModel=mod||'';const before=items.length;handle(s,true);capModel='';
+  const it=items[0];if(items.length>before&&it&&it.reg&&mod&&it.m.replace(/\s/g,'')!==mod.replace(/\s/g,''))toast('Atención: la etiqueta dice '+mod+' y el inventario '+it.m)}
+async function withBusy(fn){if(busy||asking)return;busy=true;const b=$('btnScan');b.disabled=true;b.textContent='Leyendo…';try{await fn()}catch(e){toast('Error al leer: '+(e&&e.message||e))}finally{busy=false;b.disabled=false;b.textContent='Escanear'}}
+$('btnScan').addEventListener('click',()=>withBusy(async()=>{const v=$('vid');if(!v.videoWidth)return toast('La cámara aún no está lista');
+  try{actx&&actx.resume&&actx.resume()}catch(e){}
+  flash('#ffffff');await analyze(toCanvas(v,v.videoWidth,v.videoHeight,1920))}));
+$('foto').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(!f)return;
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)()}catch(_){}
+  withBusy(()=>new Promise(res=>{const img=new Image(),u=URL.createObjectURL(f);img.onload=async()=>{try{await analyze(toCanvas(img,img.naturalWidth,img.naturalHeight,2000))}finally{URL.revokeObjectURL(u);res()}};img.onerror=()=>{toast('No se pudo abrir la foto');res()};img.src=u}))});
 $('btnPause').addEventListener('click',()=>{paused=!paused;$('btnPause').textContent=paused?'Reanudar':'Pausar';toast(paused?'Escaneo en pausa':'Escaneando')});
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&running)stop()});
 
